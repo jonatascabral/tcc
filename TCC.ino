@@ -1,5 +1,5 @@
 #include <Servo.h>
-//#include <PS3BT.h>
+#include <PS3BT.h>
 #include <PS3USB.h>
 #include <SPI.h>
 #include <MFRC522.h>
@@ -20,161 +20,170 @@
  * SPI MISO    MISO         12 / ICSP-1   50        D12        ICSP-1           14
  * SPI SCK     SCK          13 / ICSP-3   52        D13        ICSP-3           15
  */
-#define RST_PIN     0 //
-#define SS_PIN      1 // Problema no pino 10
+int pinReset = 0,               // RFID RST
+    pinSDA = 1,                 // RFID SDA(SS)
 
-USB Usb;
-//BTD Btd(&Usb);
-//PS3BT PS3(&Btd, 0x00, 0x15, 0x83, 0x0C, 0xBF, 0xEB);
-PS3USB PS3(&Usb);
-MFRC522 mfrc522(SS_PIN, RST_PIN);   // Create MFRC522 instance
+    pinDirecao = 5,             // Servo
+    pinLed = 8,                 // Led de alertas
 
-int servo = 9;
-int led = 8;
-int pwm1 = 2, ini1 = 3, ini2 = 4,
-    pwm2 = 7, ini3 = 5, ini4 = 6;
+    pinFrente = 3,              // OUT 3
+    pinTras = 4,                // OUT 4
+
+    pinDireita = 6,             // OUT 1
+    pinEsquerda = 7;            // OUT 2
+uint16_t maxVelocidade = 50,         // Velocidade maxima ao ler a tag @TODO: definir velocidades para cada tag/cartao lido
+         velocidadeDefault = 135;    // Velocidade maxima para economizar bateria
+
+bool limitaVelocidade = false;  // Define se deve limitar a velocidade
+
 Servo servoMotor;
+MFRC522 mfrc522(pinSDA, pinReset);
 
-int maxVelocidade = 130;
-bool limitaVelocidade = false;
+/**
+ * USB Host Library
+ * Arduino UNO:
+ * - Pinos 11 a 13 sao de uso exclusivo da lib SPI
+ * - Pino 10 NAO PODE SER USADO, ele eh exclusivo para comunicacao da Shield USB HOST com o Arduino
+ */
+USB Usb;
 
-void setup()
-{
-    if (Usb.Init() == -1) {
-        return;
-        while (1); //halt
+/**
+ * PS3 Bluetooth mode
+ * Como usar:
+ * Conecte o adaptador e aguarde 5 seg;
+ * Conecte o controle com o cabo, aguarde 5 seg, ligue o controle e desconecte o cabo;
+ * Conecte o adaptador novamente;
+ * Espere sincronizar;
+ */
+//BTD Btd(&Usb);
+//PS3BT PS3(&Btd);
+
+// PS3 Cable mode
+PS3USB PS3(&Usb); // Caso use a versao bluetooth comente esta linha
+
+
+// void virar(int graus) {
+//     if (graus < 15) {
+//         graus = 15;
+//     }
+//     servoMotor.write(graus);
+// }
+
+void virar(uint16_t forca, int direcao = 0) {
+    switch (direcao) {
+        case 1: // esquerda
+            analogWrite(pinEsquerda, forca);
+        break;
+        case 2: // direita
+            analogWrite(pinDireita, forca);
+        break;
+        case 3: // analogico, compara pra saber a direcao
+            int pinUsado;
+            if (forca > 127) {
+                pinUsado = pinEsquerda;
+            } else {
+                pinUsado = pinDireita;
+            }
+            analogWrite(pinUsado, forca);
+        break;
+        default:
+            analogWrite(pinEsquerda, 0);
+            analogWrite(pinDireita,  0);
+        break;
     }
+}
+
+void acelerar(uint16_t velocidade, bool forward = true) {
+    if (velocidade > velocidadeDefault && forward) {
+        velocidade = velocidadeDefault;
+    } else if (velocidade > velocidadeDefault && !forward) {
+        velocidade = 70;
+    }
+    if (limitaVelocidade && forward && velocidade > maxVelocidade) {
+        velocidade = maxVelocidade;
+    }
+    if (forward) {
+        analogWrite(pinFrente, velocidade);
+    } else {
+        analogWrite(pinTras, velocidade);
+    }
+}
+
+void blink() {
+    digitalWrite(pinLed, HIGH);
+    delay(100);
+    digitalWrite(pinLed, LOW);
+    delay(100);
+    digitalWrite(pinLed, HIGH);
+    delay(100);
+    digitalWrite(pinLed, LOW);
+}
+
+
+void setup() {
+    if (Usb.Init() == -1) {
+        while(1);
+    }
+
+    // Start SPI e RFID
     SPI.begin();
     mfrc522.PCD_Init();
-    servoMotor.attach(servo);
-    pinMode(pwm1, OUTPUT);
-    pinMode(ini1, OUTPUT);
-    pinMode(ini2, OUTPUT);
 
-    pinMode(pwm2, OUTPUT);
-    pinMode(ini3, OUTPUT);
-    pinMode(ini4, OUTPUT);
-    pinMode(led, OUTPUT);
-    startApp();
+    // servoMotor.attach(pinDirecao);
+    pinMode(pinLed,      OUTPUT);
+
+    pinMode(pinFrente,   OUTPUT);
+    pinMode(pinTras,     OUTPUT);
+
+    pinMode(pinDireita,  OUTPUT);
+    pinMode(pinEsquerda, OUTPUT);
+
+    // Blink Led, app start OK
+    blink();
 }
 
-void loop()
-{
+void loop() {
     Usb.Task();
     if (PS3.PS3Connected) {
-        /*if (PS3.getButtonClick(PS)) {
-             PS3.disconnect();
+        if (PS3.getButtonClick(PS)) {
+            // PS3.release(); // USB Mode
+            // PS3.disconnect(); // Bluetooth Mode
         }
-        */
-        int leftAnalog = PS3.getAnalogHat(LeftHatX);
-        if (leftAnalog || leftAnalog == 0) {
-            moveServo(map(leftAnalog, 0, 255, 0, 180));
-        } else {
-            moveServo(90);
-        }
+        // Acelerar Frente e Tras R2 / L2
+        uint16_t btR2 = PS3.getAnalogButton(R2);
+        uint16_t btL2 = PS3.getAnalogButton(L2);
+        acelerar(btR2);
+        acelerar(btL2, false);
 
-        moveMotor(0, false);
-        int btR2 = PS3.getAnalogButton(R2);
-        int btL2 = PS3.getAnalogButton(L2);
-        int btX = PS3.getAnalogButton(CROSS);
-        int btQ = PS3.getAnalogButton(SQUARE);
-        if (btR2) {
-            moveMotor(btR2, true);
-        }
-        if (btL2) {
-            moveMotor(btL2, false);
-        }
-        if (btX) {
-            moveMotor(btX, true);
-        }
-        if (btQ) {
-            moveMotor(btQ, false);
-        }
+        // Acelerar Frente e Tras X / Q
+        uint16_t btX = PS3.getAnalogButton(CROSS);
+        uint16_t btQ = PS3.getAnalogButton(SQUARE);
+        acelerar(btX);
+        acelerar(btQ, false);
 
-        moveMotor2(0, false);
+        // Virar direcionais
         if (PS3.getButtonPress(LEFT)) {
-            //moveServo(map(0, 0, 255, 0, 180));
-            moveMotor2(135, true);
+            // virar(map(0, 0, 255, 0, 180));
+            virar((uint16_t) 65, 1);
             delay(80);
-        }
-        if (PS3.getButtonPress(RIGHT)) {
-            //moveServo(map(255, 0, 255, 0, 180));
-            moveMotor2(135, false);
+        } else if (PS3.getButtonPress(RIGHT)) {
+            // virar(map(255, 0, 255, 0, 180));
+            virar((uint16_t) 65, 2);
             delay(80);
+        } else {
+            virar(0);
         }
+
+        // Virar Analogico esquerdo
+        uint16_t leftAnalog = PS3.getAnalogHat(LeftHatX);
+        // virar(map(leftAnalog, 0, 255, 0, 180));
+        virar(leftAnalog, 3);
+
+        if (mfrc522.PICC_IsNewCardPresent() || mfrc522.PICC_ReadCardSerial()) {
+            limitaVelocidade = !limitaVelocidade;
+            blink();
+        }
+        delay(40);
     }
 
-    if (mfrc522.PICC_IsNewCardPresent() || mfrc522.PICC_ReadCardSerial()) {
-        limitaVelocidade = !limitaVelocidade;
-        digitalWrite(led, HIGH);
-        delay(100);
-        digitalWrite(led, LOW);
-    }
 }
-
-
-void moveServo(int graus) {
-    if (graus < 15) {
-        graus = 15;
-    }
-    servoMotor.write(graus);
-}
-
-void moveMotor2(int number, bool forward) {
-    analogWrite(pwm1, number);
-    if (number == 0) {
-        digitalWrite(ini1, HIGH);
-        digitalWrite(ini2, HIGH);
-    } else if (forward) {
-        digitalWrite(ini1, HIGH);
-        digitalWrite(ini2, LOW);
-    } else {
-        digitalWrite(ini1, LOW);
-        digitalWrite(ini2, HIGH);
-    }
-}
-
-void moveMotor(int number, bool forward) {
-    if (limitaVelocidade && forward && number > maxVelocidade) {
-        number = maxVelocidade;
-    }
-    analogWrite(pwm2, number);
-    if (number == 0) {
-        digitalWrite(ini3, HIGH);
-        digitalWrite(ini4, HIGH);
-    } else if (forward) {
-        digitalWrite(ini3, HIGH);
-        digitalWrite(ini4, LOW);
-    } else {
-        digitalWrite(ini3, LOW);
-        digitalWrite(ini4, HIGH);
-    }
-}
-
-void startApp() {
-    digitalWrite(led, HIGH);
-    delay(100);
-    digitalWrite(led, LOW);
-    delay(100);
-    digitalWrite(led, HIGH);
-    delay(100);
-    digitalWrite(led, LOW);
-}
-
-// void ShowReaderDetails() {
-//     // Get the MFRC522 software version
-//     byte v = mfrc522.PCD_ReadRegister(mfrc522.VersionReg);
-//     Serial.print(F("MFRC522 Software Version: 0x"));
-//     Serial.print(v, HEX);
-//     if (v == 0x91)
-//         Serial.print(F(" = v1.0"));
-//     else if (v == 0x92)
-//         Serial.print(F(" = v2.0"));
-//     else
-//         Serial.print(F(" (unknown)"));
-//     Serial.println("");
-//     // When 0x00 or 0xFF is returned, communication probably failed
-//     if ((v == 0x00) || (v == 0xFF)) {
-//         Serial.println(F("WARNING: Communication failure, is the MFRC522 properly connected?"));
-//     }
-// }
