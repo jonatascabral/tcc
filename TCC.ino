@@ -23,18 +23,20 @@
 int pinReset = 0,               // RFID RST
     pinSDA = 1,                 // RFID SDA(SS)
 
-    pinDirecao = 5,             // Servo
+    pinDirecao = 7,             // Servo
     pinLed = 8,                 // Led de alertas
 
     pinFrente = 3,              // OUT 3
-    pinTras = 4,                // OUT 4
+    pinTras = 6,                // OUT 4
 
-    pinDireita = 6,             // OUT 1
-    pinEsquerda = 7;            // OUT 2
+    pinDireita = 4,             // OUT 1
+    pinEsquerda = 5;            // OUT 2
 uint16_t maxVelocidade = 50,         // Velocidade maxima ao ler a tag @TODO: definir velocidades para cada tag/cartao lido
-         velocidadeDefault = 135;    // Velocidade maxima para economizar bateria
+         velocidadeDefault = 135,    // Velocidade maxima para economizar bateria
+         velocidadeMotor = 135;      // Velocidade do motor da direcao
 
-bool limitaVelocidade = false;  // Define se deve limitar a velocidade
+bool limitaVelocidade = false,  // Define se deve limitar a velocidade
+     aceso = false;
 
 Servo servoMotor;
 MFRC522 mfrc522(pinSDA, pinReset);
@@ -78,13 +80,13 @@ void virar(uint16_t forca, int direcao = 0) {
             analogWrite(pinDireita, forca);
         break;
         case 3: // analogico, compara pra saber a direcao
-            int pinUsado;
-            if (forca > 127) {
-                pinUsado = pinEsquerda;
-            } else {
-                pinUsado = pinDireita;
-            }
-            analogWrite(pinUsado, forca);
+            // int pinUsado;
+            // if (forca > 127) {
+            //     pinUsado = pinEsquerda;
+            // } else {
+            //     pinUsado = pinDireita;
+            // }
+            // analogWrite(pinUsado, forca);
         break;
         default:
             analogWrite(pinEsquerda, 0);
@@ -164,11 +166,11 @@ void loop() {
         // Virar direcionais
         if (PS3.getButtonPress(LEFT)) {
             // virar(map(0, 0, 255, 0, 180));
-            virar((uint16_t) 65, 1);
+            virar(velocidadeMotor, 1);
             delay(80);
         } else if (PS3.getButtonPress(RIGHT)) {
             // virar(map(255, 0, 255, 0, 180));
-            virar((uint16_t) 65, 2);
+            virar(velocidadeMotor, 2);
             delay(80);
         } else {
             virar(0);
@@ -182,8 +184,16 @@ void loop() {
         if (mfrc522.PICC_IsNewCardPresent() || mfrc522.PICC_ReadCardSerial()) {
             limitaVelocidade = !limitaVelocidade;
             blink();
+            delay(700);
         }
         delay(40);
-    }
 
+        if (limitaVelocidade && !aceso) {
+            digitalWrite(pinLed, HIGH);
+            aceso = true;
+        } else if (!limitaVelocidade && aceso) {
+            digitalWrite(pinLed, LOW);
+            aceso = false;
+        }
+    }
 }
