@@ -3,7 +3,7 @@
 #include <PS3USB.h>
 #include <SPI.h>
 #include <MFRC522.h>
-#include "SevSeg.h"
+#include <SevSeg.h>
 
 // #ifdef dobogusinclude
 // #include <spi4teensy3.h>
@@ -26,17 +26,31 @@ int pinReset = 49,  // RFID RST
     pinSDA = 53,    // RFID SDA(SS)
 
     pinDirecao = 48, // Servo
-    pinFarol1 = 34,    // Farol 1
-    pinFarol2 = 35,    // Farol 2
+    pinFarol1 = 34,  // Farol 1
+    pinFarol2 = 35,  // Farol 2
 
     pinFrente = 2,  // OUT 3
     pinTras = 3;    // OUT 4
 
 byte numDigits = 4, // Numero de digitos do display
-    digitPins[] = {36, 37, 38, 39}, // Pinos dos digitos
-    segmentPins[] = {40, 41, 42, 43, 44, 45, 46, 47}; // Pinos dos segmentos
+    digitPins[] = { // Pinos dos digitos
+        36, // D1
+        37, // D2
+        38, // D3
+        39  // D4
+    },
+    segmentPins[] = {  // Pinos dos segmentos
+        40, // A
+        41, // B
+        42, // C
+        43, // D
+        44, // E
+        45, // F
+        46, // G
+        47  // dep
+    };
 
-uint16_t velocidadeDefault = 160,    // Velocidade maxima para economizar bateria
+uint16_t velocidadeDefault = 100,    // Velocidade maxima para economizar bateria
          velocidadeAtual = 0,
          maxVelocidade = velocidadeDefault;
 
@@ -68,8 +82,8 @@ PS3BT PS3(&Btd);
 // PS3 Cable mode
 // PS3USB PS3(&Usb); // Caso use a versao bluetooth comente esta linha
 
-void mostrarRotacao() {
-    sevseg.setNumber(velocidadeAtual, 4);
+void mostrarRotacao(int velocidade = 0) {
+    sevseg.setNumber(velocidade, 4);
     sevseg.refreshDisplay();
 }
 
@@ -82,10 +96,9 @@ void frente(uint16_t velocidade) {
     if (velocidade > maxVelocidade) {
         velocidade = maxVelocidade;
     }
-    analogWrite(pinFrente, velocidade);
     analogWrite(pinTras, 0);
-    velocidadeAtual = velocidade;
-    mostrarRotacao();
+    analogWrite(pinFrente, velocidade);
+    mostrarRotacao(velocidade);
     delay(10);
 }
 
@@ -93,43 +106,45 @@ void tras(uint16_t velocidade) {
     if (velocidade > maxVelocidade) {
         velocidade = maxVelocidade;
     }
-    analogWrite(pinTras, velocidade);
     analogWrite(pinFrente, 0);
-    velocidadeAtual = velocidade;
-    mostrarRotacao();
+    analogWrite(pinTras, velocidade);
+    mostrarRotacao(velocidade);
     delay(10);
 }
 
 void parar() {
     analogWrite(pinTras, 0);
     analogWrite(pinFrente, 0);
-    velocidadeAtual = 0;
     mostrarRotacao();
     delay(10);
 }
 
-void blink() {
-    digitalWrite(pinFarol1, HIGH);
-    digitalWrite(pinFarol2, HIGH);
+void piscarFarol() {
+    uint16_t on = HIGH, off = LOW;
+    if (aceso) {
+        on = off;
+        off = HIGH;
+    }
+    digitalWrite(pinFarol1, on);
+    digitalWrite(pinFarol2, on);
     delay(100);
-    digitalWrite(pinFarol1, LOW);
-    digitalWrite(pinFarol2, LOW);
+    digitalWrite(pinFarol1, off);
+    digitalWrite(pinFarol2, off);
     delay(100);
-    digitalWrite(pinFarol1, HIGH);
-    digitalWrite(pinFarol2, HIGH);
+    digitalWrite(pinFarol1, on);
+    digitalWrite(pinFarol2, on);
     delay(100);
-    digitalWrite(pinFarol1, LOW);
-    digitalWrite(pinFarol2, LOW);
+    digitalWrite(pinFarol1, off);
+    digitalWrite(pinFarol2, off);
 }
 
 void farol() {
-    if (!aceso) {
-        digitalWrite(pinFarol1, HIGH);
-        digitalWrite(pinFarol2, HIGH);
-    } else {
-        digitalWrite(pinFarol1, LOW);
-        digitalWrite(pinFarol2, LOW);
+    uint16_t funcao = HIGH;
+    if (aceso) {
+        funcao = LOW;
     }
+    digitalWrite(pinFarol1, funcao);
+    digitalWrite(pinFarol2, funcao);
     aceso = !aceso;
 }
 
@@ -171,7 +186,6 @@ void limitaVelocidade(unsigned long cardUid) {
           maxVelocidade = 60;
           break;
     }
-    Serial.print("Max Velocidade => "); Serial.println(maxVelocidade);
 }
 
 void setup() {
@@ -196,9 +210,6 @@ void setup() {
     pinMode(pinFrente, OUTPUT);
     pinMode(pinTras,   OUTPUT);
 
-    // Blink Led, app start OK
-    blink();
-
     Serial.write("Setup finalizado");
 }
 
@@ -206,7 +217,7 @@ void loop() {
     Usb.Task();
     if (PS3.PS3Connected) {
         if (PS3.getButtonClick(PS)) {
-            // PS3.disconnect(); // Bluetooth Mode
+            PS3.disconnect(); // Bluetooth Mode
         }
         // Acelerar Frente e Tras R2 / L2
         uint16_t btR2 = PS3.getAnalogButton(R2);
@@ -246,12 +257,11 @@ void loop() {
             }
         }
 
-        if (PS3.getButtonClick(TRIANGLE)) {
+        if (PS3.getButtonClick(R1)) {
             farol();
         }
-        if (PS3.getButtonClick(SELECT)) {
-            Serial.println("");
-            PS3.printStatusString();
+        if (PS3.getButtonClick(L1)) {
+            piscarFarol();
         }
 
         if (mfrc522.PICC_IsNewCardPresent()) {
