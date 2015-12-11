@@ -26,8 +26,6 @@ int pinReset = 49,  // RFID RST
     pinSDA = 53,    // RFID SDA(SS)
 
     pinDirecao = 48, // Servo
-    pinFarol1 = 34,  // Farol 1
-    pinFarol2 = 35,  // Farol 2
 
     pinFrente = 2,  // OUT 3
     pinTras = 3;    // OUT 4
@@ -77,7 +75,7 @@ USB Usb;
  * Espere sincronizar;
  */
 BTD Btd(&Usb);
-PS3BT PS3(&Btd);
+PS3BT PS3(&Btd, 0x00, 0x15, 0x83, 0x0C, 0xBF, 0xEB);
 
 // PS3 Cable mode
 // PS3USB PS3(&Usb); // Caso use a versao bluetooth comente esta linha
@@ -89,7 +87,6 @@ void mostrarRotacao(int velocidade = 0) {
 
 void virar(int graus) {
     servoMotor.write(graus);
-    delay(10);
 }
 
 void frente(uint16_t velocidade) {
@@ -99,7 +96,6 @@ void frente(uint16_t velocidade) {
     analogWrite(pinTras, 0);
     analogWrite(pinFrente, velocidade);
     mostrarRotacao(velocidade);
-    delay(10);
 }
 
 void tras(uint16_t velocidade) {
@@ -109,44 +105,14 @@ void tras(uint16_t velocidade) {
     analogWrite(pinFrente, 0);
     analogWrite(pinTras, velocidade);
     mostrarRotacao(velocidade);
-    delay(10);
 }
 
 void parar() {
     analogWrite(pinTras, 0);
     analogWrite(pinFrente, 0);
     mostrarRotacao();
-    delay(10);
 }
 
-void piscarFarol() {
-    uint16_t on = HIGH, off = LOW;
-    if (aceso) {
-        on = off;
-        off = HIGH;
-    }
-    digitalWrite(pinFarol1, on);
-    digitalWrite(pinFarol2, on);
-    delay(100);
-    digitalWrite(pinFarol1, off);
-    digitalWrite(pinFarol2, off);
-    delay(100);
-    digitalWrite(pinFarol1, on);
-    digitalWrite(pinFarol2, on);
-    delay(100);
-    digitalWrite(pinFarol1, off);
-    digitalWrite(pinFarol2, off);
-}
-
-void farol() {
-    uint16_t funcao = HIGH;
-    if (aceso) {
-        funcao = LOW;
-    }
-    digitalWrite(pinFarol1, funcao);
-    digitalWrite(pinFarol2, funcao);
-    aceso = !aceso;
-}
 
 /**
  * mfrc522.PICC_IsNewCardPresent() should be checked before
@@ -197,15 +163,13 @@ void setup() {
 
     // Inicia o display
     sevseg.begin(COMMON_ANODE, numDigits, digitPins, segmentPins);
-    sevseg.setBrightness(10);
+    sevseg.setBrightness(90);
 
     // Start SPI e RFID
     SPI.begin();
     mfrc522.PCD_Init();
 
     servoMotor.attach(pinDirecao);
-    pinMode(pinFarol1, OUTPUT);
-    pinMode(pinFarol2, OUTPUT);
 
     pinMode(pinFrente, OUTPUT);
     pinMode(pinTras,   OUTPUT);
@@ -255,13 +219,6 @@ void loop() {
             } else {
                 virar(0);
             }
-        }
-
-        if (PS3.getButtonClick(R1)) {
-            farol();
-        }
-        if (PS3.getButtonClick(L1)) {
-            piscarFarol();
         }
 
         if (mfrc522.PICC_IsNewCardPresent()) {
